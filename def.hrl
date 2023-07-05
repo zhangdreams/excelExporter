@@ -17,7 +17,7 @@
 -record(vip6_def, {id, package3, max}).
 
 %% 自动生成，切勿修改
--record(vip_def, {id, package3, max}).
+-record(vip_def, {id, id2, package3, max}).
 
 %% 自动生成，切勿修改
 -record(level_def, {id, package3, max, min, te}).
