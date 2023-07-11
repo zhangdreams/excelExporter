@@ -100,9 +100,9 @@ func setLangKeys(file *excelize.File, sheetName string, rows [][]string, fileNam
 	LangIndex := 0
 	for i, row := range rows {
 		if i >= 4 && len(row) > 0 {
-			recordStr := ""
-			keyStr := ""
-			keyStr2 := ""
+			var recordStr, keyStr, keyStr2 string
+			//keyStr := ""
+			//keyStr2 := ""
 			multiKey := false
 			for k, cell := range row {
 				// 判断地区标签
@@ -135,7 +135,7 @@ func setLangKeys(file *excelize.File, sheetName string, rows [][]string, fileNam
 			if multiKey {
 				keyStr = "{" + keyStr + "}"
 			}
-			recordStr = "{" + fileName + "_def," + recordStr + "}"
+			recordStr = strings.Replace("{"+fileName+"_def,"+recordStr+"}", "\n", "", -1)
 			if LangIndex != 0 {
 				_, ok := langKeys[keyStr]
 				if !ok && keyStr != "" {

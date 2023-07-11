@@ -32,6 +32,7 @@ func WriteErl(data ExcelData, path string) {
 	fileStr := ""
 	allStr := "\nall() -> \n\t[\n\t\t"
 	allFirstLine := true
+	var keys []string
 	// 遍历行和列，
 	for r, row := range data.Rows {
 		// 检查配置结束
@@ -40,9 +41,9 @@ func WriteErl(data ExcelData, path string) {
 		}
 		LangFlag := checkLangFlag(data, r, row)
 		if r >= 4 && !LangFlag {
-			recordStr := ""
-			keyStr := ""
-			marcoRecStr := ""
+			var recordStr, keyStr, marcoRecStr string
+			//keyStr := ""
+			//marcoRecStr := ""
 			multiKey := false
 			for c, cell := range row {
 				if outType[c] == 2 || outType[c] == 3 {
@@ -61,10 +62,11 @@ func WriteErl(data ExcelData, path string) {
 					recordStr += cell
 				}
 			}
-			recordStr = "{" + fileName + "_def," + recordStr + "}"
+			recordStr = strings.Replace("{"+fileName+"_def,"+recordStr+"}", "\n", "", -1)
 			if multiKey {
 				keyStr = "{" + keyStr + "}"
 			}
+			keys = append(keys, keyStr)
 
 			_, ok := langKeys[keyStr]
 			if ok {
@@ -83,6 +85,13 @@ func WriteErl(data ExcelData, path string) {
 			}
 			allFirstLine = false
 			allStr += recordStr
+		}
+	}
+	for k, rec := range langKeys {
+		if !In(k, keys) {
+			rec = "?get_" + rec
+			fileStr += "\nget(" + k + ") ->\n\t" + rec + ";"
+			allStr += ",\n\t\t" + rec
 		}
 	}
 	allStr += "\n\t]."
