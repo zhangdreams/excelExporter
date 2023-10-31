@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -29,22 +30,31 @@ func WriteErl(data ExcelData, path string) {
 		"\tend.\n"
 
 	fileStr := ""
-	allStr := "all() -> \n\t[\n\t\t"
+	allStr := "\nall() -> \n\t[\n\t\t"
 	allFirstLine := true
+	var keys []string
 	// 遍历行和列，
 	for r, row := range data.Rows {
-		if r >= 4 {
-			recordStr := ""
-			keyStr := ""
+		// 检查配置结束
+		if len(row) == 0 {
+			break
+		}
+		LangFlag := checkLangFlag(data, r, row)
+		if r >= 4 && !LangFlag {
+			var recordStr, keyStr, marcoRecStr string
+			//keyStr := ""
+			//marcoRecStr := ""
 			multiKey := false
 			for c, cell := range row {
 				if outType[c] == 2 || outType[c] == 3 {
 					if keyType[c] {
 						if keyStr != "" {
 							keyStr += ","
+							marcoRecStr += "_"
 							multiKey = true
 						}
 						keyStr += cell
+						marcoRecStr += cell
 					}
 					if recordStr != "" {
 						recordStr += ","
@@ -52,10 +62,23 @@ func WriteErl(data ExcelData, path string) {
 					recordStr += cell
 				}
 			}
-			recordStr = "{" + fileName + "_def," + recordStr + "}"
+			recordStr = strings.Replace("{"+fileName+"_def,"+recordStr+"}", "\n", "", -1)
 			if multiKey {
 				keyStr = "{" + keyStr + "}"
 			}
+			keys = append(keys, keyStr)
+
+			_, ok := langKeys[keyStr]
+			if ok {
+				// 需要把当前的配置保存下来
+				langDataMap[keyStr+"1"] = langData{
+					marco:  marcoRecStr,
+					record: recordStr,
+				}
+				// 多个地区包含该配置，替换为地区的配置
+				recordStr = "?get_" + marcoRecStr
+			}
+
 			fileStr += "\nget(" + keyStr + ") ->\n\t" + recordStr + ";"
 			if !allFirstLine {
 				allStr += ",\n\t\t"
@@ -64,10 +87,20 @@ func WriteErl(data ExcelData, path string) {
 			allStr += recordStr
 		}
 	}
+	for k, rec := range langKeys {
+		if !In(k, keys) {
+			rec = "?get_" + rec
+			fileStr += "\nget(" + k + ") ->\n\t" + rec + ";"
+			allStr += ",\n\t\t" + rec
+		}
+	}
 	allStr += "\n\t]."
-	fileStr += "\nget(_) -> \n\tundefined."
+	fileStr += "\nget(_) -> \n\tundefined.\n"
 
-	fileStr = fileHead + fileStr + "\n\n" + allStr
+	// 多地区配置
+	langStr := getLangStr()
+
+	fileStr = fileHead + fileStr + langStr + allStr
 	// todo 写入erl文件
 	erlFile := path + "/cfg_" + fileName + ".erl"
 	err := os.WriteFile(erlFile, []byte(fileStr), 0644)
@@ -79,6 +112,47 @@ func WriteErl(data ExcelData, path string) {
 	fmt.Println(erlFile + " done")
 }
 
+func getLangStr() string {
+	ret := ""
+	endStr := ""
+	for _, lang := range langArr {
+		index, ok := langMap[lang]
+		if ok && len(langKeys) > 0 {
+			lang = "LANG_" + lang
+			head := "-ifdef(" + lang + ").\n"
+			body := ""
+			for key, key2 := range langKeys {
+				val, ok := langDataMap[key+strconv.Itoa(index)]
+				rec := ""
+				if ok {
+					rec = "\t-define(get_" + key2 + "," + val.record + ").\n"
+				} else {
+					rec = "\t-define(get_" + key2 + ", undefined).\n"
+				}
+				body = body + rec
+			}
+			ret = ret + head + body + "-else.\n"
+			endStr += "\n-endif."
+		}
+	}
+	// 补充默认配置
+	for key, key2 := range langKeys {
+		val, ok := langDataMap[key+"1"]
+		rec := ""
+		if ok {
+			rec = "\t-define(get_" + key2 + "," + val.record + ").\n"
+		} else {
+			rec = "\t-define(get_" + key2 + ", undefined).\n"
+		}
+		ret += rec
+	}
+	if ret != "" {
+		ret = "\n" + ret + endStr + "\n"
+	}
+	return ret
+}
+
+// 写入头文件
 func writeHrl(data ExcelData, path string) bool {
 	var hrlStr = ""
 	row := data.Rows[2]
@@ -159,4 +233,14 @@ func writeHrl(data ExcelData, path string) bool {
 
 	fmt.Println(hrlFile + " done")
 	return true
+}
+
+func checkLangFlag(data ExcelData, r int, row []string) bool {
+	if len(row) > 0 {
+		str := strings.ToUpper(row[0])
+		color := GetCellBgColor(data.file, data.sheetName, 0, r)
+		_, ok := langMap[str]
+		return ok && color == "FF0000"
+	}
+	return false
 }

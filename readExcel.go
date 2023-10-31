@@ -25,15 +25,39 @@ func Read(file string) (ExcelData, error) {
 		fmt.Println("读取文件错误", sheetName, err)
 		return ExcelData{}, err
 	}
-
 	if len(rows) == 0 {
 		return ExcelData{}, errors.New("没有读取到内容")
 	}
+	err = setExportType(rows)
+	if err != nil {
+		return ExcelData{}, err
+	}
+
+	// 保存一下文件名
+	fileName := filepath.Base(file)
+	fileNameWithoutExt := fileName[:len(fileName)-len(filepath.Ext(fileName))]
+
+	err = setLangKeys(f, sheetName, rows, fileNameWithoutExt)
+	if err != nil {
+		return ExcelData{}, err
+	}
+
+	return ExcelData{
+		file:      f,
+		name:      fileNameWithoutExt,
+		sheetName: sheetName,
+		Rows:      rows,
+	}, nil
+}
+
+// 设置每一字段的导出标签
+func setExportType(rows [][]string) error {
 	typeRow := rows[1]
 	keyRow := rows[3]
 	// 每个字段的导出类型 1:前端导出 2:后端导出 3:都导出
 	// 这里也可以使用颜色填充，可以少一行导出的配置
 	typeArr := []string{"1", "2", "3"}
+	err := errors.New("")
 	for i, t := range typeRow {
 		// 导出类型
 		var v = 0
@@ -41,13 +65,10 @@ func Read(file string) (ExcelData, error) {
 			v, err = strconv.Atoi(t)
 			if err != nil {
 				fmt.Println("导出类型配置错误 ", i+1, t)
+				return err
 			}
 		}
 
-		//cellName, err := excelize.CoordinatesToCellName(i+1, 2)
-		//if err != nil {
-		//	fmt.Println("CoordinatesToCellName error", err)
-		//}
 		//color := getCellBgColor(f, sheetName, cellName)
 		//fmt.Println("====>>>>color ", cellName, color)
 
@@ -71,41 +92,66 @@ func Read(file string) (ExcelData, error) {
 			}
 		}
 	}
-
-	// 保存一下文件名
-	fileName := filepath.Base(file)
-	fileNameWithoutExt := fileName[:len(fileName)-len(filepath.Ext(fileName))]
-	return ExcelData{
-		name: fileNameWithoutExt,
-		Rows: rows,
-	}, nil
+	return nil
 }
 
-func getCellBgColor(f *excelize.File, sheet, cell string) string {
-	styleID, err := f.GetCellStyle(sheet, cell)
-	if err != nil {
-		return err.Error()
-	}
-	fillID := *f.Styles.CellXfs.Xf[styleID].FillID
-	fgColor := f.Styles.Fills.Fill[fillID].PatternFill.FgColor
-	if fgColor != nil && f.Theme != nil {
-		if clrScheme := f.Theme.ThemeElements.ClrScheme; fgColor.Theme != nil {
-			if val, ok := map[int]*string{
-				0: &clrScheme.Lt1.SysClr.LastClr,
-				1: &clrScheme.Dk1.SysClr.LastClr,
-				2: clrScheme.Lt2.SrgbClr.Val,
-				3: clrScheme.Dk2.SrgbClr.Val,
-				4: clrScheme.Accent1.SrgbClr.Val,
-				5: clrScheme.Accent2.SrgbClr.Val,
-				6: clrScheme.Accent3.SrgbClr.Val,
-				7: clrScheme.Accent4.SrgbClr.Val,
-				8: clrScheme.Accent5.SrgbClr.Val,
-				9: clrScheme.Accent6.SrgbClr.Val,
-			}[*fgColor.Theme]; ok && val != nil {
-				return strings.TrimPrefix(excelize.ThemeColor(*val, fgColor.Tint), "FF")
+// 记录多地区key
+func setLangKeys(file *excelize.File, sheetName string, rows [][]string, fileName string) error {
+	LangIndex := 0
+	for i, row := range rows {
+		if i >= 4 && len(row) > 0 {
+			var recordStr, keyStr, keyStr2 string
+			//keyStr := ""
+			//keyStr2 := ""
+			multiKey := false
+			for k, cell := range row {
+				// 判断地区标签
+				v, ok := langMap[strings.ToUpper(cell)]
+				if k == 0 && ok {
+					color := GetCellBgColor(file, sheetName, k, i)
+					if color == "FF0000" {
+						LangIndex = v
+						langArr = append(langArr, strings.ToUpper(cell))
+						continue
+					}
+				}
+
+				if outType[k] == 2 || outType[k] == 3 {
+					if keyType[k] {
+						if keyStr != "" {
+							keyStr += ","
+							keyStr2 += "_"
+							multiKey = true
+						}
+						keyStr += cell
+						keyStr2 += cell
+					}
+					if recordStr != "" {
+						recordStr += ","
+					}
+					recordStr += cell
+				}
+			}
+			if multiKey {
+				keyStr = "{" + keyStr + "}"
+			}
+			recordStr = strings.Replace("{"+fileName+"_def,"+recordStr+"}", "\n", "", -1)
+			if LangIndex != 0 {
+				_, ok := langKeys[keyStr]
+				if !ok && keyStr != "" {
+					langKeys[keyStr] = keyStr2
+				}
+				//if !In(keyStr, langKeys) {
+				//	langKeys = append(langKeys, keyStr) // 多地区控制的key
+				//}
+
+				// 记录每个地区对应的key-record
+				langDataMap[keyStr+strconv.Itoa(LangIndex)] = langData{
+					marco:  keyStr2,
+					record: recordStr,
+				}
 			}
 		}
-		return strings.TrimPrefix(fgColor.RGB, "FF")
 	}
-	return "FFFFFF"
+	return nil
 }
